@@ -1,7 +1,5 @@
 import socket
-
-from urllib2 import urlopen
-
+from urllib.request import urlopen
 from parsing import parse_discovery_response, parse_description
 
 IFACE = '0.0.0.0'
@@ -48,10 +46,12 @@ class VieraFinder(object):
         sock.sendto(p, (SSDP_MCAST_ADDR, SSDP_PORT))
 
         data = sock.recv(1024)
+        data = data.decode('utf-8')
 
         location = parse_discovery_response(data)
 
         return location
 
     def _make_packet(self, header, fields):
-        return '\r\n'.join([header] + [': '.join(pair) for pair in fields]) + '\r\n'
+        packet = '\r\n'.join([header] + [': '.join(pair) for pair in fields]) + '\r\n'
+        return packet.encode('utf-8')

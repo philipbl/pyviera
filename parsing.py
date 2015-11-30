@@ -1,10 +1,8 @@
-import urlparse
-
 from lxml import objectify
-
+from urllib.parse import urlparse, urljoin
 from viera import Viera
 
-class NoServiceDescriptionError(StandardError): pass
+class NoServiceDescriptionError(Exception): pass
 
 def parse_discovery_response(data):
     for line in data.splitlines():

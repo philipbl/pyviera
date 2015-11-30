@@ -1,4 +1,4 @@
-import urllib2
+from urllib.request import urlopen, Request
 
 class Viera(object):
     def __init__(self, hostname, control_url, service_type):
@@ -16,7 +16,7 @@ class Viera(object):
             (slug,),
         )
 
-        urllib2.urlopen(req).read()
+        urlopen(req).read()
 
     def __unicode__(self):
         return u'<Hostname:%s ControlURL:%s ServiceType:%s>' % (
@@ -148,6 +148,6 @@ class Action(object):
             'SOAPAction': '"%s#%s"' % (service_type, self.name),
         }
 
-        req = urllib2.Request(url, soap_body, headers)
+        req = Request(url, soap_body, headers)
 
         return req

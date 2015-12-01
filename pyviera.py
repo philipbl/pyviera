@@ -1,37 +1,78 @@
 import socket
-from urllib.request import urlopen
-from parsing import parse_discovery_response, parse_description
+from urllib.request import urlopen, Request
+from urllib.parse import urlparse, urljoin
+import xml.etree.ElementTree as ET
 
 IFACE = '0.0.0.0'
 SSDP_MCAST_ADDR = '239.255.255.250'
 SSDP_PORT = 1900
+TIME_OUT = 1
 
-class VieraFinder(object):
+commands = {
+    'vol_up': 'NRC_VOLUP-ONOFF',
+    'vol_down': 'NRC_VOLDOWN-ONOFF',
+    'mute': 'NRC_MUTE-ONOFF',
+    'num': 'NRC_D{}-ONOFF',
+    'power': 'NRC_TV-ONOFF',
+    'toggle_3D': 'NRC_3D-ONOFF',
+    'toggle_SDCard': 'NRC_SD_CARD-ONOFF',
+    'red': 'NRC_RED-ONOFF',
+    'green': 'NRC_GREEN-ONOFF',
+    'yellow': 'NRC_YELLOW-ONOFF',
+    'blue': 'NRC_BLUE-ONOFF',
+    'vtools': 'NRC_VTOOLS-ONOFF',
+    'cancel': 'NRC_CANCEL-ONOFF',
+    'option': 'NRC_SUBMENU-ONOFF',
+    'return': 'NRC_RETURN-ONOFF',
+    'enter': 'NRC_ENTER-ONOFF',
+    'right': 'NRC_RIGHT-ONOFF',
+    'left': 'NRC_LEFT-ONOFF',
+    'up': 'NRC_UP-ONOFF',
+    'down': 'NRC_DOWN-ONOFF',
+    'display': 'NRC_DISP_MODE-ONOFF',
+    'menu': 'NRC_MENU-ONOFF',
+    'connect': 'NRC_INTERNET-ONOFF',
+    'link': 'NRC_VIERA_LINK-ONOFF',
+    'guide': 'NRC_EPG-ONOFF',
+    'text': 'NRC_TEXT-ONOFF',
+    'subtitles': 'NRC_STTL-ONOFF',
+    'info': 'NRC_INFO-ONOFF',
+    'index': 'NRC_INDEX-ONOFF',
+    'hold': 'NRC_HOLD-ONOFF'
+}
 
-    def __init__(self):
-        desc_url = self.discover()
+class Viera(object):
+    def __init__(self, hostname, control_url, service_type):
+        self.hostname = hostname
+        self.control_url = control_url
+        self.service_type = service_type
 
-        desc = urlopen(desc_url).read()
-        self.viera = parse_description(desc, desc_url)
+        for name, key in commands.items():
+            if name == 'num':
+                setattr(self, name, self.send_num(key))
+            else:
+                setattr(self, name, self.send_key(key))
 
-    def get_viera(self):
-        return self.viera
+    @classmethod
+    def discover(cls):
+        socket = cls.create_socket(IFACE, SSDP_PORT)
+        cls.send_request(socket)
+        responses = cls.receive_responses(socket)
+        responses = (r for r in responses if 'Panasonic' in r)
+        urls = (cls.parse_response(r) for r in responses)
+        data = ((url, urlopen(url).read()) for url in urls)
 
-    def create_new_listener(self, ip, port):
-        newsock = socket.socket(
-            socket.AF_INET,
-            socket.SOCK_DGRAM,
-            socket.IPPROTO_UDP
-        )
-        newsock.setsockopt(
-            socket.SOL_SOCKET,
-            socket.SO_REUSEADDR,
-            1,
-        )
-        newsock.bind((ip, port))
-        return newsock
+        return list((cls.parse_description(*d) for d in data))
 
-    def discover(self):
+    def create_socket(ip, port):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.settimeout(TIME_OUT)
+        sock.bind((ip, port))
+
+        return sock
+
+    def send_request(socket):
         header = 'M-SEARCH * HTTP/1.1'
         fields = (
             ('ST', 'urn:panasonic-com:device:p00RemoteController:1'),
@@ -40,18 +81,85 @@ class VieraFinder(object):
             ('HOST', '239.255.255.250:1900'),
         )
 
-        p = self._make_packet(header, fields)
-
-        sock = self.create_new_listener(IFACE, SSDP_PORT)
-        sock.sendto(p, (SSDP_MCAST_ADDR, SSDP_PORT))
-
-        data = sock.recv(1024)
-        data = data.decode('utf-8')
-
-        location = parse_discovery_response(data)
-
-        return location
-
-    def _make_packet(self, header, fields):
         packet = '\r\n'.join([header] + [': '.join(pair) for pair in fields]) + '\r\n'
-        return packet.encode('utf-8')
+        packet = packet.encode('utf-8')
+
+        socket.sendto(packet, (SSDP_MCAST_ADDR, SSDP_PORT))
+
+    def receive_responses(sock):
+        responses = []
+        try:
+            while True:
+                data = sock.recv(1024)
+                data = data.decode('utf-8')
+                responses.append(data)
+        except socket.timeout:
+            # Done receiving responses
+            pass
+
+        return responses
+
+    def parse_response(data):
+        for line in data.splitlines():
+            parts = line.split(': ')
+            if len(parts) > 1 and parts[0] == 'LOCATION':
+                return parts[1]
+
+    def parse_description(url, data):
+        root = ET.fromstring(data)
+        service = root.find('./{urn:schemas-upnp-org:device-1-0}device/'
+                               '{urn:schemas-upnp-org:device-1-0}serviceList/'
+                               '{urn:schemas-upnp-org:device-1-0}service')
+
+        if service is None:
+            raise NoServiceDescriptionError
+
+        service_type = service.find('./{urn:schemas-upnp-org:device-1-0}serviceType').text
+        control_url = urljoin(url, service.find('./{urn:schemas-upnp-org:device-1-0}controlURL').text)
+        hostname = urlparse(url).netloc
+
+        return Viera(hostname, control_url, service_type)
+
+    def send_num(self, key):
+        def func(number):
+            for digit in str(number):
+                self.send_key(key.format(digit))()
+
+        return func
+
+    def send_key(self, key):
+        def func():
+            name = 'X_SendKey'
+            params = '<X_KeyEvent>{}</X_KeyEvent>'.format(key)
+
+            soap_body = (
+                '<?xml version="1.0"?>'
+                '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">'
+                '<SOAP-ENV:Body>'
+                '<m:{name} xmlns:m="{service_type}">'
+                '{params}'
+                '</m:{name}>'
+                '</SOAP-ENV:Body>'
+            '</SOAP-ENV:Envelope>'
+            ).format(
+                name=name,
+                service_type=self.service_type,
+                params=params
+            )
+
+            soap_body = soap_body.encode('utf-8')
+
+            headers = {
+                'Host': self.hostname,
+                'Content-Length': len(soap_body),
+                'Content-Type': 'text/xml',
+                'SOAPAction': '"{}#{}"'.format(self.service_type, name),
+            }
+
+            req = Request(self.control_url, soap_body, headers)
+            result = urlopen(req).read()
+
+            print(result)
+
+        return func
+

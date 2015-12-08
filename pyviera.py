@@ -1,7 +1,14 @@
 import socket
-from urllib.request import urlopen, Request
-from urllib.parse import urlparse, urljoin
 import xml.etree.ElementTree as ET
+
+try:
+    # Python 3
+    from urllib.request import urlopen, Request
+    from urllib.parse import urlparse, urljoin
+except ImportError:
+    # Python 2
+    from urllib2 import urlopen, urlparse, Request
+    from urlparse import urljoin
 
 IFACE = '0.0.0.0'
 SSDP_MCAST_ADDR = '239.255.255.250'
@@ -53,17 +60,18 @@ class Viera(object):
             else:
                 setattr(self, name, self.send_key(key))
 
-    @classmethod
-    def discover(cls):
-        socket = cls.create_socket(IFACE, SSDP_PORT)
-        cls.send_request(socket)
-        responses = cls.receive_responses(socket)
+    @staticmethod
+    def discover():
+        socket = Viera.create_socket( IFACE, SSDP_PORT)
+        Viera.send_request(socket)
+        responses = Viera.receive_responses(socket)
         responses = (r for r in responses if 'Panasonic' in r)
-        urls = (cls.parse_response(r) for r in responses)
+        urls = (Viera.parse_response(r) for r in responses)
         data = ((url, urlopen(url).read()) for url in urls)
 
-        return list((cls.parse_description(*d) for d in data))
+        return list((Viera.parse_description(*d) for d in data))
 
+    @staticmethod
     def create_socket(ip, port):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -72,6 +80,7 @@ class Viera(object):
 
         return sock
 
+    @staticmethod
     def send_request(socket):
         header = 'M-SEARCH * HTTP/1.1'
         fields = (
@@ -86,6 +95,7 @@ class Viera(object):
 
         socket.sendto(packet, (SSDP_MCAST_ADDR, SSDP_PORT))
 
+    @staticmethod
     def receive_responses(sock):
         responses = []
         try:
@@ -99,12 +109,14 @@ class Viera(object):
 
         return responses
 
+    @staticmethod
     def parse_response(data):
         for line in data.splitlines():
             parts = line.split(': ')
             if len(parts) > 1 and parts[0] == 'LOCATION':
                 return parts[1]
 
+    @staticmethod
     def parse_description(url, data):
         root = ET.fromstring(data)
         service = root.find('./{urn:schemas-upnp-org:device-1-0}device/'

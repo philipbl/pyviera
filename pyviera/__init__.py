@@ -16,11 +16,12 @@ SSDP_PORT = 1900
 TIME_OUT = 1
 
 commands = {
+    'power': 'NRC_POWER-ONOFF',
     'vol_up': 'NRC_VOLUP-ONOFF',
     'vol_down': 'NRC_VOLDOWN-ONOFF',
     'mute': 'NRC_MUTE-ONOFF',
     'num': 'NRC_D{}-ONOFF',
-    'power': 'NRC_TV-ONOFF',
+    'tv': 'NRC_TV-ONOFF',
     'toggle_3D': 'NRC_3D-ONOFF',
     'toggle_SDCard': 'NRC_SD_CARD-ONOFF',
     'red': 'NRC_RED-ONOFF',
@@ -45,7 +46,11 @@ commands = {
     'subtitles': 'NRC_STTL-ONOFF',
     'info': 'NRC_INFO-ONOFF',
     'index': 'NRC_INDEX-ONOFF',
-    'hold': 'NRC_HOLD-ONOFF'
+    'hold': 'NRC_HOLD-ONOFF',
+    'ch_up': 'NRC_CH_UP-ONOFF',
+    'ch_down': 'NRC_CH_DOWN-ONOFF',
+    'input': 'NRC_CHG_INPUT-ONOFF',
+    'last_view': 'NRC_R_TUNE-ONOFF'
 }
 
 class Viera(object):

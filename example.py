@@ -17,5 +17,8 @@ if len(tvs) > 0:
     tv.vol_up()
     tv.num(5)
 
+    tv.ch_up()
+    tv.ch_down()
+
 else:
     print("No TVs could be found")

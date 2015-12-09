@@ -1,4 +1,5 @@
 import socket
+import time
 import xml.etree.ElementTree as ET
 
 try:
@@ -58,6 +59,8 @@ class Viera(object):
         self.hostname = hostname
         self.control_url = control_url
         self.service_type = service_type
+        self.throttle = .5
+        self.last_called = time.time()
 
         for name, key in commands.items():
             if name == 'num':
@@ -146,6 +149,11 @@ class Viera(object):
 
     def send_key(self, key):
         def func():
+            time_last_call = time.time() - self.last_called
+            if time_last_call < self.throttle:
+                time.sleep(self.throttle - time_last_call)
+                self.last_called = time.time()
+
             name = 'X_SendKey'
             params = '<X_KeyEvent>{}</X_KeyEvent>'.format(key)
 

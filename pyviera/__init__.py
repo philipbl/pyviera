@@ -176,7 +176,5 @@ class Viera(object):
             req = Request(self.control_url, soap_body, headers)
             result = urlopen(req).read()
 
-            print(result)
-
         return func
 

@@ -1,3 +1,4 @@
+import logging
 import socket
 import time
 import xml.etree.ElementTree as ET
@@ -10,6 +11,8 @@ except ImportError:
     # Python 2
     from urllib2 import urlopen, urlparse, Request
     from urlparse import urljoin
+
+logger = logging.getLogger("pyviera")
 
 IFACE = '0.0.0.0'
 SSDP_MCAST_ADDR = '239.255.255.250'
@@ -70,6 +73,7 @@ class Viera(object):
 
     @staticmethod
     def discover():
+        logger.info("Looking for TVs")
         socket = Viera.create_socket( IFACE, SSDP_PORT)
         Viera.send_request(socket)
         responses = Viera.receive_responses(socket)
@@ -101,6 +105,7 @@ class Viera(object):
         packet = '\r\n'.join([header] + [': '.join(pair) for pair in fields]) + '\r\n'
         packet = packet.encode('utf-8')
 
+        logger.debug("Sending to {}:{}:\n{}".format(SSDP_MCAST_ADDR, SSDP_PORT, packet))
         socket.sendto(packet, (SSDP_MCAST_ADDR, SSDP_PORT))
 
     @staticmethod
@@ -110,10 +115,11 @@ class Viera(object):
             while True:
                 data = sock.recv(1024)
                 data = data.decode('utf-8')
+                logger.debug("Received a response:\n{}".format(data))
                 responses.append(data)
         except socket.timeout:
             # Done receiving responses
-            pass
+            logger.debug("Done receiving responses")
 
         return responses
 
@@ -151,6 +157,7 @@ class Viera(object):
         def func():
             time_last_call = time.time() - self.last_called
             if time_last_call < self.throttle:
+                logger.debug("Sleeping for {}".format(self.throttle - time_last_call))
                 time.sleep(self.throttle - time_last_call)
                 self.last_called = time.time()
 
@@ -180,6 +187,9 @@ class Viera(object):
                 'Content-Type': 'text/xml',
                 'SOAPAction': '"{}#{}"'.format(self.service_type, name),
             }
+
+            logger.info("Sending key {}".format(key))
+            logger.debug("Sending key to {}:\n{}\n{}".format(self.control_url, headers, soap_body))
 
             req = Request(self.control_url, soap_body, headers)
             result = urlopen(req).read()

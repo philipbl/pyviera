@@ -1,7 +1,7 @@
-from pyviera import Viera, commands
+from pyviera import Viera, COMMANDS
 
 # List out all possible commands
-print(commands.keys())
+print(COMMANDS.keys())
 print()
 
 # Look for any supported TVs

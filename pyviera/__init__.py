@@ -12,14 +12,14 @@ except ImportError:
     from urllib2 import urlopen, urlparse, Request
     from urlparse import urljoin
 
-logger = logging.getLogger("pyviera")
+LOGGER = logging.getLogger("pyviera")
 
 IFACE = '0.0.0.0'
 SSDP_MCAST_ADDR = '239.255.255.250'
 SSDP_PORT = 1900
 TIME_OUT = 1
 
-commands = {
+COMMANDS = {
     'power': 'NRC_POWER-ONOFF',
     'vol_up': 'NRC_VOLUP-ONOFF',
     'vol_down': 'NRC_VOLDOWN-ONOFF',
@@ -57,6 +57,7 @@ commands = {
     'last_view': 'NRC_R_TUNE-ONOFF'
 }
 
+
 class Viera(object):
     def __init__(self, hostname, control_url, service_type):
         self.hostname = hostname
@@ -65,7 +66,7 @@ class Viera(object):
         self.throttle = .5
         self.last_called = time.time()
 
-        for name, key in commands.items():
+        for name, key in COMMANDS.items():
             if name == 'num':
                 setattr(self, name, self.send_num(key))
             else:
@@ -73,10 +74,10 @@ class Viera(object):
 
     @staticmethod
     def discover():
-        logger.info("Looking for TVs")
-        socket = Viera.create_socket( IFACE, SSDP_PORT)
-        Viera.send_request(socket)
-        responses = Viera.receive_responses(socket)
+        LOGGER.info("Looking for TVs")
+        sock = Viera.create_socket(IFACE, SSDP_PORT)
+        Viera.send_request(sock)
+        responses = Viera.receive_responses(sock)
         responses = (r for r in responses if 'Panasonic' in r)
         urls = (Viera.parse_response(r) for r in responses)
         data = ((url, urlopen(url).read()) for url in urls)
@@ -84,16 +85,16 @@ class Viera(object):
         return list((Viera.parse_description(*d) for d in data))
 
     @staticmethod
-    def create_socket(ip, port):
+    def create_socket(ip_addr, port):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.settimeout(TIME_OUT)
-        sock.bind((ip, port))
+        sock.bind((ip_addr, port))
 
         return sock
 
     @staticmethod
-    def send_request(socket):
+    def send_request(sock):
         header = 'M-SEARCH * HTTP/1.1'
         fields = (
             ('ST', 'urn:panasonic-com:device:p00RemoteController:1'),
@@ -105,8 +106,8 @@ class Viera(object):
         packet = '\r\n'.join([header] + [': '.join(pair) for pair in fields]) + '\r\n'
         packet = packet.encode('utf-8')
 
-        logger.debug("Sending to {}:{}:\n{}".format(SSDP_MCAST_ADDR, SSDP_PORT, packet))
-        socket.sendto(packet, (SSDP_MCAST_ADDR, SSDP_PORT))
+        LOGGER.debug("Sending to %s:%s:\n%s", SSDP_MCAST_ADDR, SSDP_PORT, packet)
+        sock.sendto(packet, (SSDP_MCAST_ADDR, SSDP_PORT))
 
     @staticmethod
     def receive_responses(sock):
@@ -115,11 +116,11 @@ class Viera(object):
             while True:
                 data = sock.recv(1024)
                 data = data.decode('utf-8')
-                logger.debug("Received a response:\n{}".format(data))
+                LOGGER.debug("Received a response:\n%s", data)
                 responses.append(data)
         except socket.timeout:
             # Done receiving responses
-            logger.debug("Done receiving responses")
+            LOGGER.debug("Done receiving responses")
 
         return responses
 
@@ -132,16 +133,15 @@ class Viera(object):
 
     @staticmethod
     def parse_description(url, data):
+        name_space = '{urn:schemas-upnp-org:device-1-0}'
         root = ET.fromstring(data)
-        service = root.find('./{urn:schemas-upnp-org:device-1-0}device/'
-                               '{urn:schemas-upnp-org:device-1-0}serviceList/'
-                               '{urn:schemas-upnp-org:device-1-0}service')
+        service = root.find('./{ns}device/{ns}serviceList/{ns}service'.format(ns=name_space))
 
         if service is None:
-            raise NoServiceDescriptionError
+            raise Exception("No service description was found.")
 
-        service_type = service.find('./{urn:schemas-upnp-org:device-1-0}serviceType').text
-        control_url = urljoin(url, service.find('./{urn:schemas-upnp-org:device-1-0}controlURL').text)
+        service_type = service.find('./{ns}serviceType'.format(ns=name_space)).text
+        control_url = urljoin(url, service.find('./{ns}controlURL'.format(ns=name_space)).text)
         hostname = urlparse(url).netloc
 
         return Viera(hostname, control_url, service_type)
@@ -157,7 +157,7 @@ class Viera(object):
         def func():
             time_last_call = time.time() - self.last_called
             if time_last_call < self.throttle:
-                logger.debug("Sleeping for {}".format(self.throttle - time_last_call))
+                LOGGER.debug("Sleeping for %s", self.throttle - time_last_call)
                 time.sleep(self.throttle - time_last_call)
                 self.last_called = time.time()
 
@@ -166,13 +166,14 @@ class Viera(object):
 
             soap_body = (
                 '<?xml version="1.0"?>'
-                '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">'
+                '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope"'
+                'SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">'
                 '<SOAP-ENV:Body>'
                 '<m:{name} xmlns:m="{service_type}">'
                 '{params}'
                 '</m:{name}>'
                 '</SOAP-ENV:Body>'
-            '</SOAP-ENV:Envelope>'
+                '</SOAP-ENV:Envelope>'
             ).format(
                 name=name,
                 service_type=self.service_type,
@@ -188,11 +189,10 @@ class Viera(object):
                 'SOAPAction': '"{}#{}"'.format(self.service_type, name),
             }
 
-            logger.info("Sending key {}".format(key))
-            logger.debug("Sending key to {}:\n{}\n{}".format(self.control_url, headers, soap_body))
+            LOGGER.info("Sending key %s", key)
+            LOGGER.debug("Sending key to %s:\n%s\n%s", self.control_url, headers, soap_body)
 
             req = Request(self.control_url, soap_body, headers)
-            result = urlopen(req).read()
+            urlopen(req).read()
 
         return func
-
